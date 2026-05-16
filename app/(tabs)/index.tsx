@@ -2,6 +2,7 @@ import { StyleSheet, TouchableOpacity, FlatList, View, Text } from 'react-native
 import { useDispatch } from '../../context/DispatchContext';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
+import { Bot } from 'lucide-react-native';
 
 interface Agent {
   id: string;
@@ -25,18 +26,28 @@ export default function HomeScreen() {
     }
   }, [status, sendMessage, subscribe]);
 
-  const renderAgent = ({ item }: { item: Agent }) => (
-    <TouchableOpacity 
-      style={[styles.agentCard, { borderLeftColor: item.color || '#333' }]}
-      onPress={() => router.push(`/chat/${item.id}?name=${encodeURIComponent(item.name)}&color=${encodeURIComponent(item.color)}`)}
-    >
-      <Text style={styles.agentEmoji}>{item.emoji || '🤖'}</Text>
-      <View style={styles.agentInfo}>
-        <Text style={styles.agentName}>{item.name}</Text>
-        <Text style={styles.agentRole}>{item.role}</Text>
-      </View>
-    </TouchableOpacity>
-  );
+  const renderAgent = ({ item }: { item: Agent }) => {
+    const isTextFallback = item.emoji && item.emoji.length > 2;
+    
+    return (
+      <TouchableOpacity 
+        style={[styles.agentCard, { borderLeftColor: item.color || '#333' }]}
+        onPress={() => router.push(`/chat/${item.id}?name=${encodeURIComponent(item.name)}&color=${encodeURIComponent(item.color)}`)}
+      >
+        {isTextFallback ? (
+          <View style={{ marginRight: 16, width: 32, height: 32, alignItems: 'center', justifyContent: 'center' }}>
+            <Bot size={28} color={item.color || "#888"} />
+          </View>
+        ) : (
+          <Text style={styles.agentEmoji}>{item.emoji || '🤖'}</Text>
+        )}
+        <View style={styles.agentInfo}>
+          <Text style={styles.agentName}>{item.name}</Text>
+          <Text style={styles.agentRole}>{item.role}</Text>
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <View style={styles.container}>

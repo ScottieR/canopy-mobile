@@ -77,7 +77,10 @@ export default function ChatScreen() {
           styles.messageBubble, 
           isUser ? [styles.messageBubbleUser, { backgroundColor: color || '#218380' }] : styles.messageBubbleAgent
         ]}>
-          <Text style={isUser ? styles.messageTextUser : styles.messageTextAgent}>
+          <Text 
+            style={isUser ? styles.messageTextUser : styles.messageTextAgent}
+            selectable={true}
+          >
             {item.content}
           </Text>
         </View>

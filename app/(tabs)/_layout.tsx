@@ -40,6 +40,13 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => <TabBarIcon name="qrcode" color={color} />,
         }}
       />
+      <Tabs.Screen
+        name="sensors"
+        options={{
+          title: 'Sensors',
+          tabBarIcon: ({ color }) => <TabBarIcon name="feed" color={color} />,
+        }}
+      />
     </Tabs>
   );
 }
