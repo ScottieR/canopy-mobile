@@ -1,7 +1,8 @@
 import { StyleSheet, TextInput, TouchableOpacity, FlatList, KeyboardAvoidingView, Platform, ActivityIndicator, View, Text } from 'react-native';
 import { useLocalSearchParams, router, Stack } from 'expo-router';
 import { useEffect, useState, useRef } from 'react';
-import { Animated, Platform, Pressable } from 'react-native';
+import { Animated, Pressable } from 'react-native';
+import { useDispatch } from '../../context/DispatchContext';
 import { Send, ArrowLeft, Mic, Keyboard } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { GenUIRenderer } from '../../components/GenUIRenderer';

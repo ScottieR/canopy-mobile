@@ -8,21 +8,25 @@ import * as Haptics from 'expo-haptics';
 export default function CaptureNoteShortcut() {
   const { status, sendMessage } = useDispatch();
   const [isRecording, setIsRecording] = useState(false);
-  const [statusText, setStatusText] = useState('Hold to capture a thought...');
+  const [statusText, setStatusText] = useState('Initializing...');
   const scaleAnim = useRef(new Animated.Value(1)).current;
 
-  const handlePressIn = () => {
+  // Auto-start recording on mount for the zero-tap Back Tap shortcut
+  useEffect(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     setIsRecording(true);
     setStatusText('Listening...');
-    Animated.spring(scaleAnim, {
-      toValue: 1.5,
-      friction: 5,
-      useNativeDriver: true,
-    }).start();
-  };
+    
+    Animated.loop(
+      Animated.sequence([
+        Animated.spring(scaleAnim, { toValue: 1.5, friction: 5, useNativeDriver: true }),
+        Animated.spring(scaleAnim, { toValue: 1.2, friction: 5, useNativeDriver: true })
+      ])
+    ).start();
+  }, []);
 
-  const handlePressOut = () => {
+  const handleStopRecording = () => {
+    scaleAnim.stopAnimation();
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setIsRecording(false);
     setStatusText('Processing and sending to agent swarm...');
@@ -57,8 +61,7 @@ export default function CaptureNoteShortcut() {
 
       <View style={styles.walkieContainer}>
         <Pressable
-          onPressIn={handlePressIn}
-          onPressOut={handlePressOut}
+          onPress={handleStopRecording}
           style={styles.walkieButtonOuter}
         >
           <Animated.View style={[
@@ -70,6 +73,11 @@ export default function CaptureNoteShortcut() {
           </Animated.View>
         </Pressable>
         <Text style={styles.walkieHint}>{statusText}</Text>
+        {isRecording && (
+          <Text style={{ color: '#718096', fontSize: 13, marginTop: 12 }}>
+            Tap the button to stop & send
+          </Text>
+        )}
       </View>
     </View>
   );
