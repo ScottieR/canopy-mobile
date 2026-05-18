@@ -1,4 +1,4 @@
-import { StyleSheet, TouchableOpacity, FlatList, View, Text, Switch, ScrollView } from 'react-native';
+import { StyleSheet, TouchableOpacity, FlatList, View, Text, Switch, ScrollView, Platform } from 'react-native';
 import { useDispatch } from '../../context/DispatchContext';
 import { useEffect, useState } from 'react';
 import { Bot, MapPin, Zap, Camera, Bell, Home, Activity, ChevronRight, ChevronDown } from 'lucide-react-native';
@@ -12,12 +12,12 @@ interface Agent {
 }
 
 const SENSORS = [
-  { id: 'apple_health', name: 'Apple Health Sync', desc: 'Sync vitals and workouts continuously in the background.', icon: Activity, color: '#ff2d55' },
-  { id: 'live_location', name: 'Live Location & Geofencing', desc: 'Agent knows when you leave home or arrive at work.', icon: MapPin, color: '#007aff' },
-  { id: 'shortcuts', name: 'Apple Shortcuts', desc: 'Allow the agent to trigger Siri Intents and Shortcuts.', icon: Zap, color: '#ff9500' },
-  { id: 'vision', name: 'Vision & Photo Sync', desc: 'Agent silently indexes your recent camera roll for context.', icon: Camera, color: '#5856d6' },
-  { id: 'notifications', name: 'Actionable Push Notifications', desc: 'Approve agent actions directly from your lock screen.', icon: Bell, color: '#ffcc00' },
-  { id: 'homekit', name: 'Smart Home / HomeKit', desc: 'Bridge HomeKit access so the agent can control lights.', icon: Home, color: '#4cd964' },
+  { id: 'apple_health', name: 'Apple Health Sync', desc: 'Sync vitals and workouts continuously in the background.', icon: Activity, color: '#ff2d55', prefix: 'ah_' },
+  { id: 'live_location', name: 'Live Location & Geofencing', desc: 'Agent knows when you leave home or arrive at work.', icon: MapPin, color: '#007aff', prefix: 'll_' },
+  { id: 'shortcuts', name: 'Apple Shortcuts', desc: 'Allow the agent to trigger Siri Intents and Shortcuts.', icon: Zap, color: '#ff9500', prefix: 'sh_' },
+  { id: 'vision', name: 'Vision & Photo Sync', desc: 'Agent silently indexes your recent camera roll for context.', icon: Camera, color: '#5856d6', prefix: 'vs_' },
+  { id: 'notifications', name: 'Actionable Push Notifications', desc: 'Approve agent actions directly from your lock screen.', icon: Bell, color: '#ffcc00', prefix: 'pn_' },
+  { id: 'homekit', name: 'Smart Home / HomeKit', desc: 'Bridge HomeKit access so the agent can control lights.', icon: Home, color: '#4cd964', prefix: 'hk_' },
 ];
 
 export default function SensorsScreen() {
@@ -27,6 +27,7 @@ export default function SensorsScreen() {
   
   // Fake state for toggles per agent
   const [sensorState, setSensorState] = useState<Record<string, Record<string, boolean>>>({});
+  const [sensorTokens, setSensorTokens] = useState<Record<string, Record<string, string>>>({});
 
   useEffect(() => {
     if (status === 'connected') {
@@ -41,7 +42,7 @@ export default function SensorsScreen() {
     }
   }, [status, sendMessage, subscribe]);
 
-  const toggleSensor = (agentId: string, sensorId: string, value: boolean) => {
+  const toggleSensor = (agentId: string, sensorId: string, value: boolean, prefix: string) => {
     setSensorState(prev => ({
       ...prev,
       [agentId]: {
@@ -49,8 +50,24 @@ export default function SensorsScreen() {
         [sensorId]: value
       }
     }));
-    // In a real app, this would send a message to the desktop to sync the token/status
-    // sendMessage('update_sensor', { agentId, sensorId, value });
+    
+    // Generate a secure bridge token if turning on and one doesn't exist
+    if (value) {
+      setSensorTokens(prev => {
+        const agentTokens = prev[agentId] || {};
+        if (agentTokens[sensorId]) return prev; // Already generated
+        
+        // Generate random 16 char token
+        const randomString = Array.from({length: 16}, () => Math.floor(Math.random()*36).toString(36)).join('');
+        return {
+          ...prev,
+          [agentId]: {
+            ...agentTokens,
+            [sensorId]: `${prefix}${randomString}`
+          }
+        };
+      });
+    }
   };
 
   if (status !== 'connected') {
@@ -58,7 +75,7 @@ export default function SensorsScreen() {
       <View style={styles.container}>
         <Text style={styles.title}>Sensors & Integrations</Text>
         <View style={styles.separator} />
-        <Text style={{ color: '#aaa', textAlign: 'center', marginTop: 40, paddingHorizontal: 20 }}>
+        <Text style={{ color: '#718096', textAlign: 'center', marginTop: 40, paddingHorizontal: 20 }}>
           You must be connected to your Mac desktop to configure phone sensors for your agents.
         </Text>
       </View>
@@ -84,7 +101,7 @@ export default function SensorsScreen() {
             const isSelected = item.id === selectedAgentId;
             return (
               <TouchableOpacity 
-                style={[styles.agentAvatar, isSelected && { borderColor: item.color || '#fff', borderWidth: 2 }]}
+                style={[styles.agentAvatar, isSelected && { borderColor: item.color || '#3c6663', borderWidth: 3 }]}
                 onPress={() => setSelectedAgentId(item.id)}
               >
                 {item.emoji && item.emoji.length <= 2 ? (
@@ -92,7 +109,7 @@ export default function SensorsScreen() {
                 ) : (
                   <Bot size={32} color={item.color || '#888'} />
                 )}
-                <Text style={{ color: '#fff', fontSize: 10, marginTop: 4, fontWeight: isSelected ? 'bold' : 'normal' }} numberOfLines={1}>
+                <Text style={{ color: '#2D3748', fontSize: 10, marginTop: 4, fontWeight: isSelected ? '700' : '500' }} numberOfLines={1}>
                   {item.name}
                 </Text>
               </TouchableOpacity>
@@ -106,10 +123,10 @@ export default function SensorsScreen() {
         {selectedAgent ? (
           <>
             <View style={{ marginBottom: 20, paddingHorizontal: 4 }}>
-              <Text style={{ color: '#fff', fontSize: 16, fontWeight: '600' }}>
+              <Text style={{ color: '#2D3748', fontSize: 16, fontWeight: '700' }}>
                 Configuring {selectedAgent.name}
               </Text>
-              <Text style={{ color: '#aaa', fontSize: 13, marginTop: 4 }}>
+              <Text style={{ color: '#718096', fontSize: 13, marginTop: 4 }}>
                 Toggle which phone capabilities this agent can access.
               </Text>
             </View>
@@ -119,26 +136,39 @@ export default function SensorsScreen() {
               const isEnabled = sensorState[selectedAgent.id]?.[sensor.id] || false;
               
               return (
-                <View key={sensor.id} style={styles.sensorCard}>
-                  <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center', marginRight: 16 }}>
-                    <Icon size={20} color={sensor.color} />
+                <View key={sensor.id} style={{ marginBottom: 12 }}>
+                  <View style={styles.sensorCard}>
+                    <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(0,0,0,0.04)', alignItems: 'center', justifyContent: 'center', marginRight: 16 }}>
+                      <Icon size={20} color={sensor.color} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.sensorName}>{sensor.name}</Text>
+                      <Text style={styles.sensorDesc}>{sensor.desc}</Text>
+                    </View>
+                    <Switch 
+                      value={isEnabled} 
+                      onValueChange={(val) => toggleSensor(selectedAgent.id, sensor.id, val, sensor.prefix)} 
+                      trackColor={{ false: '#E2E8F0', true: '#3c6663' }}
+                      thumbColor="#fff"
+                    />
                   </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.sensorName}>{sensor.name}</Text>
-                    <Text style={styles.sensorDesc}>{sensor.desc}</Text>
-                  </View>
-                  <Switch 
-                    value={isEnabled} 
-                    onValueChange={(val) => toggleSensor(selectedAgent.id, sensor.id, val)} 
-                    trackColor={{ false: '#333', true: '#218380' }}
-                    thumbColor="#fff"
-                  />
+                  
+                  {isEnabled && sensorTokens[selectedAgent.id]?.[sensor.id] && (
+                    <View style={styles.tokenContainer}>
+                      <Text style={styles.tokenLabel}>Bridge Token (Paste into Desktop App):</Text>
+                      <View style={styles.tokenBox}>
+                        <Text style={styles.tokenText} selectable={true}>
+                          {sensorTokens[selectedAgent.id][sensor.id]}
+                        </Text>
+                      </View>
+                    </View>
+                  )}
                 </View>
               );
             })}
           </>
         ) : (
-          <Text style={{ color: '#aaa', textAlign: 'center', marginTop: 40 }}>No agents found.</Text>
+          <Text style={{ color: '#718096', textAlign: 'center', marginTop: 40 }}>No agents found.</Text>
         )}
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -151,47 +181,96 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     paddingTop: 60,
-    backgroundColor: '#111',
+    backgroundColor: '#faf9f6',
   },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#fff',
+    color: '#2D3748',
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
   },
   separator: {
     marginVertical: 20,
     height: 1,
     width: '80%',
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: '#E2E8F0',
   },
   agentAvatar: {
     width: 70,
     height: 70,
     borderRadius: 35,
-    backgroundColor: '#222',
+    backgroundColor: '#fff',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 16,
     padding: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   sensorCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#222',
+    backgroundColor: '#fff',
     padding: 16,
     borderRadius: 16,
     marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 12,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: '#F0F4F8',
   },
   sensorName: {
-    color: '#fff',
+    color: '#2D3748',
     fontSize: 15,
-    fontWeight: '600',
+    fontWeight: '700',
     marginBottom: 4,
   },
   sensorDesc: {
-    color: '#aaa',
+    color: '#718096',
     fontSize: 12,
     lineHeight: 16,
     paddingRight: 10,
+  },
+  tokenContainer: {
+    backgroundColor: '#fff',
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginTop: -4,
+    marginBottom: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  tokenLabel: {
+    color: '#2D3748',
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  tokenBox: {
+    backgroundColor: '#F0F4F8',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  tokenText: {
+    color: '#218380',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    fontSize: 14,
+    fontWeight: '700',
+    textAlign: 'center',
   }
 });

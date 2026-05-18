@@ -1,4 +1,4 @@
-import { StyleSheet, TouchableOpacity, FlatList, View, Text } from 'react-native';
+import { StyleSheet, TouchableOpacity, FlatList, View, Text, Platform } from 'react-native';
 import { useDispatch } from '../../context/DispatchContext';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
@@ -81,10 +81,10 @@ export default function HomeScreen() {
             ListHeaderComponent={<Text style={styles.sectionTitle}>Your Swarm</Text>}
           />
           <TouchableOpacity 
-            style={[styles.primaryButton, { backgroundColor: '#333', alignSelf: 'center', marginTop: 20, marginBottom: 40 }]}
+            style={[styles.primaryButton, { backgroundColor: '#fff', alignSelf: 'center', marginTop: 20, marginBottom: 40, borderWidth: 1, borderColor: '#E2E8F0', shadowOpacity: 0.05 }]}
             onPress={() => disconnect()}
           >
-            <Text style={styles.buttonText}>Disconnect</Text>
+            <Text style={[styles.buttonText, { color: '#718096' }]}>Disconnect</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -97,27 +97,35 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     paddingTop: 60,
-    backgroundColor: '#111',
+    backgroundColor: '#faf9f6',
   },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#fff',
+    color: '#2D3748',
+    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
   },
   separator: {
     marginVertical: 20,
     height: 1,
     width: '80%',
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: '#E2E8F0',
   },
   statusContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 30,
-    backgroundColor: '#222',
+    backgroundColor: '#fff',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
   statusDot: {
     width: 10,
@@ -126,24 +134,36 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   statusText: {
-    color: '#ccc',
+    color: '#718096',
     fontSize: 14,
+    fontWeight: '600',
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#fff',
+    fontWeight: '700',
+    color: '#2D3748',
     marginBottom: 16,
     marginLeft: 4,
   },
   agentCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#222',
+    backgroundColor: '#fff',
     padding: 16,
-    borderRadius: 12,
+    borderRadius: 16,
     marginBottom: 12,
     borderLeftWidth: 4,
+    borderTopWidth: 1,
+    borderRightWidth: 1,
+    borderBottomWidth: 1,
+    borderTopColor: '#F0F4F8',
+    borderRightColor: '#F0F4F8',
+    borderBottomColor: '#F0F4F8',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 12,
+    elevation: 3,
   },
   agentEmoji: {
     fontSize: 28,
@@ -154,23 +174,29 @@ const styles = StyleSheet.create({
   },
   agentName: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#fff',
+    fontWeight: '700',
+    color: '#2D3748',
     marginBottom: 4,
   },
   agentRole: {
     fontSize: 13,
-    color: '#aaa',
+    color: '#718096',
+    fontWeight: '500',
   },
   primaryButton: {
-    backgroundColor: '#218380',
+    backgroundColor: '#3c6663',
     paddingHorizontal: 24,
     paddingVertical: 14,
     borderRadius: 12,
+    shadowColor: '#3c6663',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 4,
   },
   buttonText: {
     color: '#fff',
-    fontWeight: '600',
+    fontWeight: '700',
     fontSize: 16,
   }
 });
