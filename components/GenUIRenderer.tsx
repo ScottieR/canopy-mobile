@@ -4,6 +4,45 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 export function GenUIRenderer({ payload, onAction }: { payload: any, onAction: (action: string, data: any) => void }) {
   const { component, props } = payload;
   
+  if (component === 'ApprovalCard') {
+    return (
+      <View style={styles.card}>
+        <Text style={styles.title}>{props.title || "Approval Required"}</Text>
+        {props.details && <Text style={styles.subtitle}>{props.details}</Text>}
+        <View style={styles.row}>
+          {(props.options || ['Approve', 'Reject']).map((opt: string) => (
+            <TouchableOpacity 
+              key={opt}
+              style={[styles.btn, opt === 'Approve' ? styles.approveBtn : styles.secondaryBtn]} 
+              onPress={() => onAction('approve_decision', { decision: opt })}
+            >
+              <Text style={opt === 'Approve' ? styles.approveText : styles.secondaryText}>{opt}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+    );
+  }
+
+  if (component === 'DataTable') {
+    return (
+      <View style={styles.card}>
+        <View style={{flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#E2E8F0', paddingBottom: 8, marginBottom: 8}}>
+          {(props.columns || []).map((col: string, i: number) => (
+            <Text key={i} style={{flex: 1, fontWeight: '700', fontSize: 12, color: '#718096'}}>{col}</Text>
+          ))}
+        </View>
+        {(props.rows || []).map((row: any[], i: number) => (
+          <View key={i} style={{flexDirection: 'row', paddingVertical: 4}}>
+            {row.map((cell: any, j: number) => (
+              <Text key={j} style={{flex: 1, fontSize: 12, color: '#2D3748'}}>{cell}</Text>
+            ))}
+          </View>
+        ))}
+      </View>
+    );
+  }
+
   if (component === 'ExpenseApprover') {
     return (
       <View style={styles.card}>
@@ -96,4 +135,6 @@ const styles = StyleSheet.create({
   rejectText: { color: '#EF4444', fontWeight: '700' },
   approveBtn: { backgroundColor: '#3c6663' },
   approveText: { color: '#fff', fontWeight: '700' },
+  secondaryBtn: { backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0' },
+  secondaryText: { color: '#4A5568', fontWeight: '700' },
 });

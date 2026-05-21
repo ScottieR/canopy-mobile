@@ -37,7 +37,9 @@ export default function ChatScreen() {
           content: m.content || m.text || '',
           timestamp: m.timestamp || m.ts || Date.now(),
         }));
-        setMessages(mapped);
+        // Backend returns descending (newest first). We need ascending (oldest first)
+        // so that new messages can be appended to the bottom.
+        setMessages(mapped.reverse());
       });
 
       const unsubResponse = subscribe('chat_response', (payload: any) => {
@@ -106,13 +108,22 @@ export default function ChatScreen() {
   const renderMessage = ({ item }: { item: Message }) => {
     const isUser = item.role === 'user';
     
-    // Check if content is a GenUI JSON payload
+    // Check if content is a GenUI JSON payload or wrapped in ---FORMAT--- genui
     let genUIPayload = null;
-    if (!isUser && item.content.trim().startsWith('{') && item.content.includes('"component"')) {
-      try {
-        genUIPayload = JSON.parse(item.content);
-      } catch (e) {
-        // Not valid JSON, treat as text
+    let textContent = item.content;
+
+    if (!isUser) {
+      const match = item.content.match(/---FORMAT---\s*genui\s*---CONTENT---\s*([\s\S]*)/i);
+      if (match) {
+        try {
+          genUIPayload = JSON.parse(match[1].trim());
+          textContent = ''; // Hide the wrapper text
+        } catch (e) {}
+      } else if (item.content.trim().startsWith('{') && item.content.includes('"component"')) {
+        try {
+          genUIPayload = JSON.parse(item.content);
+          textContent = '';
+        } catch (e) {}
       }
     }
 
@@ -122,7 +133,7 @@ export default function ChatScreen() {
            <GenUIRenderer 
              payload={genUIPayload} 
              onAction={(action, data) => {
-               const replyText = `I chose to ${action} the ${genUIPayload.component} payload.`;
+               const replyText = `[GenUI Event] User interacted with ${genUIPayload.component}: ${JSON.stringify({action, ...data})}`;
                sendMessage('send_message', { agent_id: id, text: replyText });
                setMessages(prev => [...prev, {
                  id: Math.random().toString(),
@@ -146,7 +157,7 @@ export default function ChatScreen() {
             style={isUser ? styles.messageTextUser : styles.messageTextAgent}
             selectable={true}
           >
-            {item.content}
+            {textContent}
           </Text>
         </View>
       </View>
