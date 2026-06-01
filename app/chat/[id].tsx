@@ -1,11 +1,17 @@
-import { StyleSheet, TextInput, TouchableOpacity, FlatList, KeyboardAvoidingView, Platform, ActivityIndicator, View, Text } from 'react-native';
+import {
+  StyleSheet, TextInput, TouchableOpacity, FlatList,
+  KeyboardAvoidingView, Platform, ActivityIndicator,
+  View, Text, ScrollView,
+} from 'react-native';
 import { useLocalSearchParams, router, Stack } from 'expo-router';
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { Animated, Pressable } from 'react-native';
 import { useDispatch } from '../../context/DispatchContext';
-import { Send, ArrowLeft, Mic, Keyboard } from 'lucide-react-native';
+import { Send, ArrowLeft, Mic, Keyboard, ChevronDown, ChevronRight, FileText, Code } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { GenUIRenderer } from '../../components/GenUIRenderer';
+
+// ─── Message type ─────────────────────────────────────────────────────────────
 
 interface Message {
   id: string;
@@ -14,8 +20,179 @@ interface Message {
   timestamp?: number;
 }
 
+// ─── Content parsers ──────────────────────────────────────────────────────────
+
+/** Extract [THOUGHT_PROCESS]...[/THOUGHT_PROCESS] blocks from agent content. */
+function parseThoughtBlocks(content: string): { thoughts: string[]; text: string } {
+  const thoughts: string[] = [];
+  const text = content.replace(
+    /\[THOUGHT_PROCESS\]([\s\S]*?)\[\/THOUGHT_PROCESS\]/g,
+    (_, thought) => { thoughts.push(thought.trim()); return ''; }
+  ).trim();
+  return { thoughts, text };
+}
+
+/** Parse ---FORMAT--- ... ---CONTENT--- delimiter blocks. */
+function parseFormatBlock(content: string): { format: 'markdown' | 'html' | 'genui' | null; body: string } {
+  const m = content.match(/---FORMAT---\s*(markdown|html|genui)\s*---CONTENT---\s*([\s\S]*)/i);
+  if (!m) return { format: null, body: content };
+  return { format: m[1].toLowerCase() as 'markdown' | 'html' | 'genui', body: m[2].trim() };
+}
+
+// ─── Collapsed thought block ──────────────────────────────────────────────────
+
+function ThoughtBlock({ thoughts }: { thoughts: string[] }) {
+  const [open, setOpen] = useState(false);
+  if (thoughts.length === 0) return null;
+  return (
+    <View style={thoughtStyles.container}>
+      <TouchableOpacity style={thoughtStyles.header} onPress={() => setOpen(o => !o)} activeOpacity={0.7}>
+        {open ? <ChevronDown size={12} color="#718096" /> : <ChevronRight size={12} color="#718096" />}
+        <Text style={thoughtStyles.label}>Thinking ({thoughts.length} block{thoughts.length > 1 ? 's' : ''})</Text>
+      </TouchableOpacity>
+      {open && (
+        <View style={thoughtStyles.body}>
+          {thoughts.map((t, i) => (
+            <Text key={i} style={thoughtStyles.text}>{t}</Text>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
+const thoughtStyles = StyleSheet.create({
+  container: { marginBottom: 6, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0', overflow: 'hidden' },
+  header:    { flexDirection: 'row', alignItems: 'center', padding: 8, backgroundColor: '#F7FAFC', gap: 6 },
+  label:     { fontSize: 11, color: '#718096', fontStyle: 'italic' },
+  body:      { padding: 10, backgroundColor: '#FAFAFA' },
+  text:      { fontSize: 12, color: '#4A5568', lineHeight: 18, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
+});
+
+// ─── Artifact card (HTML / markdown from forums) ──────────────────────────────
+
+function ArtifactCard({ format, body, agentColor }: { format: 'html' | 'markdown'; body: string; agentColor: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const isHtml = format === 'html';
+  const preview = body.replace(/<[^>]+>/g, '').slice(0, 140).trim();
+
+  return (
+    <View style={[artifactStyles.card, { borderLeftColor: agentColor }]}>
+      <View style={artifactStyles.header}>
+        {isHtml
+          ? <Code size={14} color={agentColor} />
+          : <FileText size={14} color={agentColor} />
+        }
+        <Text style={[artifactStyles.typeLabel, { color: agentColor }]}>
+          {isHtml ? 'Interactive App' : 'Document'}
+        </Text>
+      </View>
+      <Text style={artifactStyles.preview} numberOfLines={expanded ? undefined : 3}>
+        {preview}{body.length > 140 && !expanded ? '…' : ''}
+      </Text>
+      <TouchableOpacity onPress={() => setExpanded(e => !e)} style={artifactStyles.toggle}>
+        <Text style={[artifactStyles.toggleText, { color: agentColor }]}>
+          {expanded ? 'Show less' : 'Show more'}
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+const artifactStyles = StyleSheet.create({
+  card:       { borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', borderLeftWidth: 3, backgroundColor: '#fff', padding: 14, marginBottom: 4 },
+  header:     { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
+  typeLabel:  { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.4 },
+  preview:    { fontSize: 13, color: '#4A5568', lineHeight: 20 },
+  toggle:     { marginTop: 8 },
+  toggleText: { fontSize: 12, fontWeight: '600' },
+});
+
+// ─── Single message bubble ────────────────────────────────────────────────────
+
+function MessageBubble({ item, agentColor }: { item: Message; agentColor: string }) {
+  const isUser = item.role === 'user';
+
+  if (isUser) {
+    return (
+      <View style={[msgStyles.wrapper, msgStyles.wrapperUser]}>
+        <View style={[msgStyles.bubble, msgStyles.bubbleUser, { backgroundColor: agentColor }]}>
+          <Text style={msgStyles.textUser} selectable>{item.content}</Text>
+        </View>
+      </View>
+    );
+  }
+
+  // ── Agent message — parse content ──────────────────────────────────────────
+  const { format, body } = parseFormatBlock(item.content);
+
+  // GenUI via format block
+  if (format === 'genui') {
+    try {
+      const payload = JSON.parse(body);
+      if (payload.component) {
+        return (
+          <View style={[msgStyles.wrapper, msgStyles.wrapperAgent]}>
+            <GenUIRenderer payload={payload} onAction={() => {}} />
+          </View>
+        );
+      }
+    } catch {}
+  }
+
+  // HTML or markdown artifact from a forum
+  if (format === 'html' || format === 'markdown') {
+    return (
+      <View style={[msgStyles.wrapper, msgStyles.wrapperAgent]}>
+        <ArtifactCard format={format} body={body} agentColor={agentColor} />
+      </View>
+    );
+  }
+
+  // Inline GenUI (legacy — bare JSON with "component" key)
+  if (!format && item.content.trim().startsWith('{') && item.content.includes('"component"')) {
+    try {
+      const payload = JSON.parse(item.content);
+      if (payload.component) {
+        return (
+          <View style={[msgStyles.wrapper, msgStyles.wrapperAgent]}>
+            <GenUIRenderer payload={payload} onAction={() => {}} />
+          </View>
+        );
+      }
+    } catch {}
+  }
+
+  // Regular prose — strip thought blocks and render them collapsed above
+  const { thoughts, text: cleanText } = parseThoughtBlocks(format === 'markdown' ? body : item.content);
+
+  return (
+    <View style={[msgStyles.wrapper, msgStyles.wrapperAgent]}>
+      <ThoughtBlock thoughts={thoughts} />
+      {cleanText.length > 0 && (
+        <View style={[msgStyles.bubble, msgStyles.bubbleAgent]}>
+          <Text style={msgStyles.textAgent} selectable>{cleanText}</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
+const msgStyles = StyleSheet.create({
+  wrapper:      { width: '100%', flexDirection: 'row', marginBottom: 16 },
+  wrapperUser:  { justifyContent: 'flex-end' },
+  wrapperAgent: { justifyContent: 'flex-start' },
+  bubble:       { maxWidth: '80%', padding: 14, borderRadius: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
+  bubbleUser:   { borderBottomRightRadius: 4 },
+  bubbleAgent:  { backgroundColor: '#fff', borderBottomLeftRadius: 4, borderWidth: 1, borderColor: '#E2E8F0' },
+  textUser:     { color: '#fff', fontSize: 16, lineHeight: 22 },
+  textAgent:    { color: '#2D3748', fontSize: 16, lineHeight: 22 },
+});
+
+// ─── Screen ───────────────────────────────────────────────────────────────────
+
 export default function ChatScreen() {
-  const { id, name, color, mode } = useLocalSearchParams<{ id: string, name?: string, color?: string, mode?: string }>();
+  const { id, name, color, mode, session_id } = useLocalSearchParams<{ id: string; name?: string; color?: string; mode?: string; session_id?: string }>();
   const { status, sendMessage, subscribe } = useDispatch();
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
@@ -24,42 +201,53 @@ export default function ChatScreen() {
   const [isRecording, setIsRecording] = useState(false);
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const flatListRef = useRef<FlatList>(null);
+  const agentColor = color || '#218380';
+
+  // Scroll to the most recent message
+  const scrollToBottom = useCallback((animated = true) => {
+    // Small delay ensures FlatList has rendered the new item before scrolling
+    setTimeout(() => flatListRef.current?.scrollToEnd({ animated }), 80);
+  }, []);
 
   useEffect(() => {
-    if (status === 'connected') {
-      sendMessage('get_chat_history', { agent_id: id });
+    if (status !== 'connected') return;
 
-      const unsubHistory = subscribe('chat_history', (history: any[]) => {
-        // Map backend history to our format
-        const mapped = history.map(m => ({
-          id: m.id || Math.random().toString(),
-          role: m.role,
-          content: m.content || m.text || '',
-          timestamp: m.timestamp || m.ts || Date.now(),
-        }));
-        // Backend returns descending (newest first). We need ascending (oldest first)
-        // so that new messages can be appended to the bottom.
-        setMessages(mapped.reverse());
-      });
+    sendMessage('get_chat_history', { agent_id: id, session_id: session_id ?? null });
 
-      const unsubResponse = subscribe('chat_response', (payload: any) => {
-        if (payload.agent_id === id) {
-          setIsSending(false);
-          setMessages(prev => [...prev, {
-            id: Math.random().toString(),
-            role: 'agent',
-            content: payload.response?.response || payload.response?.content || String(payload.response),
-            timestamp: Date.now()
-          }]);
-        }
-      });
+    const unsubHistory = subscribe('chat_history', (history: any[]) => {
+      const mapped: Message[] = (history ?? []).map(m => ({
+        id: m.id || Math.random().toString(),
+        role: m.role === 'user' ? 'user' : 'agent',
+        content: m.content || m.text || '',
+        timestamp: m.timestamp || m.ts || Date.now(),
+      }));
+      // History comes newest-first from backend — reverse to oldest-first for display
+      setMessages(mapped.reverse());
+      // Jump to bottom without animation on initial load
+      scrollToBottom(false);
+    });
 
-      return () => {
-        unsubHistory();
-        unsubResponse();
-      };
-    }
-  }, [id, status, sendMessage, subscribe]);
+    const unsubResponse = subscribe('chat_response', (payload: any) => {
+      if (payload.agent_id !== id) return;
+      setIsSending(false);
+      setMessages(prev => [...prev, {
+        id: Math.random().toString(),
+        role: 'agent',
+        content: payload.response?.response || payload.response?.content || String(payload.response),
+        timestamp: Date.now(),
+      }]);
+      scrollToBottom(true);
+    });
+
+    return () => { unsubHistory(); unsubResponse(); };
+  }, [id, status, sendMessage, subscribe, scrollToBottom]);
+
+  const sendMessageInternal = (text: string) => {
+    setMessages(prev => [...prev, { id: Math.random().toString(), role: 'user', content: text, timestamp: Date.now() }]);
+    setIsSending(true);
+    sendMessage('send_message', { agent_id: id, text, session_id: session_id ?? null });
+    scrollToBottom(true);
+  };
 
   const handleSendText = () => {
     if (!inputText.trim() || isSending) return;
@@ -67,138 +255,60 @@ export default function ChatScreen() {
     setInputText('');
   };
 
-  const sendMessageInternal = (text: string) => {
-    const newMsg: Message = {
-      id: Math.random().toString(),
-      role: 'user',
-      content: text,
-      timestamp: Date.now(),
-    };
-    
-    setMessages(prev => [...prev, newMsg]);
-    setIsSending(true);
-    sendMessage('send_message', { agent_id: id, text: text });
-  };
-
   const handlePressIn = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     setIsRecording(true);
-    Animated.spring(scaleAnim, {
-      toValue: 1.5,
-      friction: 5,
-      useNativeDriver: true,
-    }).start();
+    Animated.spring(scaleAnim, { toValue: 1.5, friction: 5, useNativeDriver: true }).start();
   };
 
   const handlePressOut = () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setIsRecording(false);
-    Animated.spring(scaleAnim, {
-      toValue: 1,
-      friction: 5,
-      useNativeDriver: true,
-    }).start();
-    
-    // Mock sending the voice transcription
-    setTimeout(() => {
-      sendMessageInternal('*(Sent via Voice Walkie-Talkie)* Hey Sloane, what is the status of my recent project?');
-    }, 500);
-  };
-
-  const renderMessage = ({ item }: { item: Message }) => {
-    const isUser = item.role === 'user';
-    
-    // Check if content is a GenUI JSON payload or wrapped in ---FORMAT--- genui
-    let genUIPayload = null;
-    let textContent = item.content;
-
-    if (!isUser) {
-      const match = item.content.match(/---FORMAT---\s*genui\s*---CONTENT---\s*([\s\S]*)/i);
-      if (match) {
-        try {
-          genUIPayload = JSON.parse(match[1].trim());
-          textContent = ''; // Hide the wrapper text
-        } catch (e) {}
-      } else if (item.content.trim().startsWith('{') && item.content.includes('"component"')) {
-        try {
-          genUIPayload = JSON.parse(item.content);
-          textContent = '';
-        } catch (e) {}
-      }
-    }
-
-    if (genUIPayload && genUIPayload.component) {
-      return (
-        <View style={[styles.messageWrapper, styles.messageWrapperAgent]}>
-           <GenUIRenderer 
-             payload={genUIPayload} 
-             onAction={(action, data) => {
-               const replyText = `[GenUI Event] User interacted with ${genUIPayload.component}: ${JSON.stringify({action, ...data})}`;
-               sendMessage('send_message', { agent_id: id, text: replyText });
-               setMessages(prev => [...prev, {
-                 id: Math.random().toString(),
-                 role: 'user',
-                 content: replyText,
-                 timestamp: Date.now()
-               }]);
-             }}
-           />
-        </View>
-      );
-    }
-
-    return (
-      <View style={[styles.messageWrapper, isUser ? styles.messageWrapperUser : styles.messageWrapperAgent]}>
-        <View style={[
-          styles.messageBubble, 
-          isUser ? [styles.messageBubbleUser, { backgroundColor: color || '#218380' }] : styles.messageBubbleAgent
-        ]}>
-          <Text 
-            style={isUser ? styles.messageTextUser : styles.messageTextAgent}
-            selectable={true}
-          >
-            {textContent}
-          </Text>
-        </View>
-      </View>
-    );
+    Animated.spring(scaleAnim, { toValue: 1, friction: 5, useNativeDriver: true }).start();
+    setTimeout(() => sendMessageInternal('*(Voice)* What is the latest on our projects?'), 500);
   };
 
   return (
     <View style={styles.container}>
-      <Stack.Screen 
-        options={{ 
-          title: name || 'Chat',
-          headerStyle: { backgroundColor: '#faf9f6' },
-          headerShadowVisible: false,
-          headerTintColor: '#2D3748',
-          headerTitleStyle: { fontWeight: '700' },
-          headerLeft: () => (
-            <TouchableOpacity onPress={() => router.back()} style={{ marginLeft: -10, padding: 10 }}>
-              <ArrowLeft color="#2D3748" size={24} />
-            </TouchableOpacity>
-          )
-        }} 
-      />
+      <Stack.Screen options={{
+        title: name || 'Chat',
+        headerStyle: { backgroundColor: '#faf9f6' },
+        headerShadowVisible: false,
+        headerTintColor: '#2D3748',
+        headerTitleStyle: { fontWeight: '700' },
+        headerLeft: () => (
+          <TouchableOpacity onPress={() => router.back()} style={{ marginLeft: -10, padding: 10 }}>
+            <ArrowLeft color="#2D3748" size={24} />
+          </TouchableOpacity>
+        ),
+        // Show which thread is active — threads are managed on the desktop
+        headerRight: () => session_id ? (
+          <View style={{ marginRight: 12, backgroundColor: 'rgba(74,158,150,0.1)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 }}>
+            <Text style={{ fontSize: 10, color: '#4A9E96', fontWeight: '600' }}>
+              Active thread
+            </Text>
+          </View>
+        ) : null,
+      }} />
 
       <FlatList
         ref={flatListRef}
         data={messages}
         keyExtractor={item => item.id}
-        renderItem={renderMessage}
+        renderItem={({ item }) => <MessageBubble item={item} agentColor={agentColor} />}
         contentContainerStyle={styles.listContent}
-        onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
-        onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })}
+        // Scroll to bottom when content grows (new messages arriving)
+        onContentSizeChange={() => scrollToBottom(false)}
       />
 
       {isSending && (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="small" color={color || "#218380"} />
-          <Text style={styles.loadingText}>Agent is thinking...</Text>
+          <ActivityIndicator size="small" color={agentColor} />
+          <Text style={styles.loadingText}>Thinking…</Text>
         </View>
       )}
 
-      <KeyboardAvoidingView 
+      <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
@@ -212,17 +322,18 @@ export default function ChatScreen() {
                 style={styles.input}
                 value={inputText}
                 onChangeText={setInputText}
-                placeholder="Message..."
+                placeholder="Message…"
                 placeholderTextColor="#A0AEC0"
                 multiline
                 maxLength={1000}
+                onSubmitEditing={handleSendText}
               />
-              <TouchableOpacity 
-                style={[styles.sendButton, { backgroundColor: inputText.trim() ? (color || '#3c6663') : '#E2E8F0' }]}
+              <TouchableOpacity
+                style={[styles.sendButton, { backgroundColor: inputText.trim() ? agentColor : '#E2E8F0' }]}
                 onPress={handleSendText}
                 disabled={!inputText.trim() || isSending}
               >
-                <Send color={inputText.trim() ? "#fff" : "#A0AEC0"} size={20} />
+                <Send color={inputText.trim() ? '#fff' : '#A0AEC0'} size={20} />
               </TouchableOpacity>
             </>
           ) : (
@@ -230,24 +341,17 @@ export default function ChatScreen() {
               <TouchableOpacity style={styles.modeSwitchBtnAbsolute} onPress={() => setInputMode('text')}>
                 <Keyboard color="#718096" size={24} />
               </TouchableOpacity>
-              
               <View style={styles.walkieContainer}>
-                <Pressable
-                  onPressIn={handlePressIn}
-                  onPressOut={handlePressOut}
-                  style={styles.walkieButtonOuter}
-                >
+                <Pressable onPressIn={handlePressIn} onPressOut={handlePressOut} style={styles.walkieButtonOuter}>
                   <Animated.View style={[
-                    styles.walkieButtonInner, 
-                    { backgroundColor: isRecording ? '#EF4444' : (color || '#3c6663') },
-                    { transform: [{ scale: scaleAnim }] }
+                    styles.walkieButtonInner,
+                    { backgroundColor: isRecording ? '#EF4444' : agentColor },
+                    { transform: [{ scale: scaleAnim }] },
                   ]}>
                     <Mic color="#fff" size={isRecording ? 48 : 40} />
                   </Animated.View>
                 </Pressable>
-                <Text style={styles.walkieHint}>
-                  {isRecording ? "Listening..." : "Hold to Speak"}
-                </Text>
+                <Text style={styles.walkieHint}>{isRecording ? 'Listening…' : 'Hold to Speak'}</Text>
               </View>
             </View>
           )}
@@ -258,147 +362,18 @@ export default function ChatScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#faf9f6',
-  },
-  listContent: {
-    padding: 16,
-    paddingBottom: 20,
-  },
-  messageWrapper: {
-    width: '100%',
-    flexDirection: 'row',
-    marginBottom: 16,
-  },
-  messageWrapperUser: {
-    justifyContent: 'flex-end',
-  },
-  messageWrapperAgent: {
-    justifyContent: 'flex-start',
-  },
-  messageBubble: {
-    maxWidth: '80%',
-    padding: 14,
-    borderRadius: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  messageBubbleUser: {
-    borderBottomRightRadius: 4,
-  },
-  messageBubbleAgent: {
-    backgroundColor: '#fff',
-    borderBottomLeftRadius: 4,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  messageTextUser: {
-    color: '#fff',
-    fontSize: 16,
-    lineHeight: 22,
-  },
-  messageTextAgent: {
-    color: '#2D3748',
-    fontSize: 16,
-    lineHeight: 22,
-  },
-  loadingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingBottom: 10,
-  },
-  loadingText: {
-    color: '#718096',
-    marginLeft: 8,
-    fontSize: 14,
-  },
-  inputContainer: {
-    flexDirection: 'row',
-    padding: 12,
-    paddingBottom: Platform.OS === 'ios' ? 30 : 12,
-    backgroundColor: '#fff',
-    alignItems: 'flex-end',
-    borderTopWidth: 1,
-    borderTopColor: '#E2E8F0',
-  },
-  input: {
-    flex: 1,
-    backgroundColor: '#F0F4F8',
-    color: '#2D3748',
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 12,
-    fontSize: 16,
-    maxHeight: 120,
-    minHeight: 44,
-  },
-  sendButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  modeSwitchBtn: {
-    padding: 10,
-    marginRight: 4,
-    justifyContent: 'center',
-  },
-  modeSwitchBtnAbsolute: {
-    position: 'absolute',
-    left: 16,
-    bottom: Platform.OS === 'ios' ? 30 : 20,
-    padding: 10,
-    zIndex: 10,
-    backgroundColor: '#F0F4F8',
-    borderRadius: 20,
-  },
-  voiceModeContainer: {
-    flex: 1,
-    height: 180,
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '100%',
-  },
-  walkieContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  walkieButtonOuter: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-  },
-  walkieButtonInner: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
-    elevation: 8,
-  },
-  walkieHint: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#718096',
-  }
+  container:            { flex: 1, backgroundColor: '#faf9f6' },
+  listContent:          { padding: 16, paddingBottom: 20 },
+  loadingContainer:     { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingBottom: 10 },
+  loadingText:          { color: '#718096', marginLeft: 8, fontSize: 14 },
+  inputContainer:       { flexDirection: 'row', padding: 12, paddingBottom: Platform.OS === 'ios' ? 30 : 12, backgroundColor: '#fff', alignItems: 'flex-end', borderTopWidth: 1, borderTopColor: '#E2E8F0' },
+  input:                { flex: 1, backgroundColor: '#F0F4F8', color: '#2D3748', borderRadius: 20, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 12, fontSize: 16, maxHeight: 120, minHeight: 44 },
+  sendButton:           { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', marginLeft: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 2 },
+  modeSwitchBtn:        { padding: 10, marginRight: 4, justifyContent: 'center' },
+  modeSwitchBtnAbsolute:{ position: 'absolute', left: 16, bottom: Platform.OS === 'ios' ? 30 : 20, padding: 10, zIndex: 10, backgroundColor: '#F0F4F8', borderRadius: 20 },
+  voiceModeContainer:   { flex: 1, height: 180, alignItems: 'center', justifyContent: 'center', width: '100%' },
+  walkieContainer:      { alignItems: 'center', justifyContent: 'center' },
+  walkieButtonOuter:    { width: 100, height: 100, borderRadius: 50, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
+  walkieButtonInner:    { width: 80, height: 80, borderRadius: 40, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.3, shadowRadius: 16, elevation: 8 },
+  walkieHint:           { fontSize: 16, fontWeight: '600', color: '#718096' },
 });
