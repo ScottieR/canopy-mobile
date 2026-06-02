@@ -36,17 +36,12 @@ export default function CaptureNoteShortcut() {
       useNativeDriver: true,
     }).start();
     
-    // Send it to the desktop to be indexed by agents
     setTimeout(() => {
       if (status === 'connected') {
-        sendMessage('send_message', { 
-          agent_id: 'system', 
-          text: 'COMMAND: CAPTURE_NOTE: I just had an idea about refactoring the database layer.'
-        });
-        
+        setStatusText('Voice capture is not wired yet. Open chat and type your note.');
         setTimeout(() => {
           router.replace('/(tabs)');
-        }, 1000);
+        }, 1600);
       } else {
         setStatusText('Not connected to desktop.');
         setTimeout(() => router.replace('/(tabs)'), 2000);

@@ -1,8 +1,9 @@
-import { StyleSheet, TouchableOpacity, FlatList, View, Text, Platform, Image } from 'react-native';
+import { StyleSheet, TouchableOpacity, FlatList, View, Text, Platform, Image, Share } from 'react-native';
 import { useDispatch } from '../../context/DispatchContext';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Wifi, WifiOff, RefreshCw } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface Agent {
   id: string;
@@ -11,14 +12,63 @@ interface Agent {
   emoji: string;
   color: string;
   image_url?: string | null;
-  /** The agent's individual chat conversation ID — must be passed to chat/history calls
-   *  so forum orchestration sessions never bleed into the mobile thread. */
+  /** Desktop's currently-active conversation id. We intentionally IGNORE this
+   *  on mobile and use a device-scoped session id instead — otherwise mobile
+   *  would mirror whichever thread the desktop has open at the moment,
+   *  including thread switches and even forum orchestration sessions.
+   *  Kept on the type for diagnostic purposes only. */
   conversation_id?: string | null;
+}
+
+/** Mobile uses a stable per-agent session id, completely decoupled from the
+ *  desktop's active thread. The backend creates this conversation lazily on
+ *  first send_message / get_chat_history call. On the desktop's ThreadsRail
+ *  the same conversation will appear as a regular thread the user can rename. */
+function mobileSessionId(agentId: string): string {
+  return `mobile_${agentId}`;
+}
+
+/** Build the deep link that launches the app directly into a live voice
+ *  session with this agent. The URL uses the `canopymobile://` scheme
+ *  declared in app.json + expo-router's auto-routing to /live/[id].
+ *  Users can save this URL into an iOS Shortcut via the "Open URL" action;
+ *  one tap on the Shortcut then launches Canopy → live mic call. */
+function liveDeepLink(agent: Agent): string {
+  const params = new URLSearchParams({
+    name: agent.name,
+    color: agent.color || '#3c6663',
+  });
+  return `canopymobile:///live/${agent.id}?${params.toString()}`;
+}
+
+/** Open the native share sheet with the live deep link pre-filled. On iOS the
+ *  share sheet includes an "Add to Shortcuts" affordance — the user picks it
+ *  and ends up with a one-tap "Go live with {agent}" shortcut on their home
+ *  screen or Lock Screen widget. */
+async function shareLiveShortcut(agent: Agent) {
+  const url = liveDeepLink(agent);
+  try {
+    await Share.share({
+      title: `Talk live with ${agent.name}`,
+      message: `Talk live with ${agent.name}: ${url}`,
+      url,                       // iOS uses this for the share-sheet preview
+    }, {
+      subject: `Talk live with ${agent.name}`,
+      // Best UX hint for iOS — keeps the title pretty when saved to Shortcuts.
+      dialogTitle: `Save as iOS Shortcut`,
+    });
+  } catch {
+    // User cancelled — silent.
+  }
 }
 
 export default function HomeScreen() {
   const { status, error, disconnect, reconnect, sendMessage, subscribe } = useDispatch();
   const [agents, setAgents] = useState<Agent[]>([]);
+  // Honour the device's safe area instead of a hardcoded paddingTop: 60.
+  // On notchless devices (small iPhones, most Android phones) this collapses
+  // close to zero so we add a base padding for breathing room.
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     if (status === 'connected') {
@@ -39,7 +89,9 @@ export default function HomeScreen() {
   const renderAgent = ({ item }: { item: Agent }) => (
     <TouchableOpacity
       style={[styles.agentCard, { borderLeftColor: item.color || '#3c6663' }]}
-      onPress={() => router.push(`/chat/${item.id}?name=${encodeURIComponent(item.name)}&color=${encodeURIComponent(item.color)}${item.conversation_id ? `&session_id=${encodeURIComponent(item.conversation_id)}` : ''}`)}
+      onPress={() => router.push(`/chat/${item.id}?name=${encodeURIComponent(item.name)}&color=${encodeURIComponent(item.color)}&session_id=${encodeURIComponent(mobileSessionId(item.id))}`)}
+      onLongPress={() => shareLiveShortcut(item)}
+      delayLongPress={450}
       activeOpacity={0.85}
     >
       {item.image_url
@@ -60,7 +112,7 @@ export default function HomeScreen() {
   );
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top + 16 }]}>
       <Text style={styles.title}>Canopy</Text>
 
       {/* Status pill */}
@@ -103,6 +155,13 @@ export default function HomeScreen() {
             ListEmptyComponent={
               <Text style={styles.emptyText}>No agents yet — create one in the desktop app</Text>
             }
+            ListFooterComponent={
+              agents.length > 0 ? (
+                <Text style={styles.shortcutHint}>
+                  Long-press an agent to save them as an iOS Shortcut — one tap to go live.
+                </Text>
+              ) : null
+            }
           />
           <TouchableOpacity style={styles.disconnectBtn} onPress={disconnect}>
             <Text style={styles.disconnectText}>Disconnect</Text>
@@ -114,7 +173,8 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container:         { flex: 1, alignItems: 'center', paddingTop: 60, backgroundColor: '#faf9f6' },
+  // paddingTop is applied inline from useSafeAreaInsets so it adapts per device.
+  container:         { flex: 1, alignItems: 'center', backgroundColor: '#faf9f6' },
   title:             { fontSize: 28, fontWeight: 'bold', color: '#2D3748', fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif', marginBottom: 16 },
 
   statusPill:        { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, marginBottom: 8 },
@@ -139,4 +199,5 @@ const styles = StyleSheet.create({
 
   disconnectBtn:     { alignSelf: 'center', paddingVertical: 12, paddingHorizontal: 24, marginVertical: 20, borderWidth: 1, borderColor: '#E2E8F0', borderRadius: 12, backgroundColor: '#fff' },
   disconnectText:    { color: '#718096', fontWeight: '500', fontSize: 14 },
+  shortcutHint:      { fontSize: 11, color: '#A0AEC0', textAlign: 'center', marginTop: 12, paddingHorizontal: 24, lineHeight: 16 },
 });

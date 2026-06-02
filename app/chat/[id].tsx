@@ -7,7 +7,7 @@ import { useLocalSearchParams, router, Stack } from 'expo-router';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { Animated, Pressable } from 'react-native';
 import { useDispatch } from '../../context/DispatchContext';
-import { Send, ArrowLeft, Mic, Keyboard, ChevronDown, ChevronRight, FileText, Code } from 'lucide-react-native';
+import { Send, ArrowLeft, Mic, Keyboard, ChevronDown, ChevronRight, FileText, Code, PhoneCall } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { GenUIRenderer } from '../../components/GenUIRenderer';
 
@@ -164,7 +164,7 @@ function MessageBubble({ item, agentColor }: { item: Message; agentColor: string
   }
 
   // Regular prose — strip thought blocks and render them collapsed above
-  const { thoughts, text: cleanText } = parseThoughtBlocks(format === 'markdown' ? body : item.content);
+  const { thoughts, text: cleanText } = parseThoughtBlocks(item.content);
 
   return (
     <View style={[msgStyles.wrapper, msgStyles.wrapperAgent]}>
@@ -265,7 +265,10 @@ export default function ChatScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setIsRecording(false);
     Animated.spring(scaleAnim, { toValue: 1, friction: 5, useNativeDriver: true }).start();
-    setTimeout(() => sendMessageInternal('*(Voice)* What is the latest on our projects?'), 500);
+    // The standalone live voice screen replaces the in-line walkie. Tapping
+    // the big mic now navigates there instead of pretending to record.
+    setInputMode('text');
+    router.push(`/live/${id}?name=${encodeURIComponent(String(name || ''))}&color=${encodeURIComponent(String(color || ''))}`);
   };
 
   return (
@@ -281,8 +284,16 @@ export default function ChatScreen() {
             <ArrowLeft color="#2D3748" size={24} />
           </TouchableOpacity>
         ),
-        // Show which thread is active — threads are managed on the desktop
-        headerRight: () => session_id ? (
+        // Mobile threads are scoped per-device — they don't follow whatever
+        // thread the desktop currently has open. The badge tells the user
+        // they're in their phone's dedicated thread with this agent.
+        headerRight: () => session_id?.startsWith('mobile_') ? (
+          <View style={{ marginRight: 12, backgroundColor: 'rgba(74,158,150,0.1)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 }}>
+            <Text style={{ fontSize: 10, color: '#4A9E96', fontWeight: '600' }}>
+              Mobile thread
+            </Text>
+          </View>
+        ) : session_id ? (
           <View style={{ marginRight: 12, backgroundColor: 'rgba(74,158,150,0.1)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 }}>
             <Text style={{ fontSize: 10, color: '#4A9E96', fontWeight: '600' }}>
               Active thread

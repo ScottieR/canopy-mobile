@@ -3,6 +3,7 @@ import { useDispatch } from '../../context/DispatchContext';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Users, CheckCircle, Clock, Pause, Zap, Plus } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type ForumStatus = 'drafting' | 'active' | 'paused' | 'completed' | 'archived';
 
@@ -37,57 +38,8 @@ const STATUS_CONFIG: Record<ForumStatus, { label: string; color: string; bg: str
   archived:  { label: 'Archived',  color: '#a0aec0', bg: 'rgba(160,174,192,0.1)',Icon: Clock        },
 };
 
-// (no mock data — only real data fetched while connected is shown)
-
-const _UNUSED: Forum[] = [
-  {
-    id: 'forum_marketing',
-    title: 'Q3 Launch Campaign',
-    brief: 'Build a go-to-market plan for the Q3 product launch targeting SMB buyers.',
-    status: 'active',
-    agents: [
-      { agentId: 'a1', name: 'Sterling', robeColor: '#818CF8', image: null },
-      { agentId: 'a2', name: 'Atlas',    robeColor: '#4A9E96', image: null },
-    ],
-    currentPhase: 'Research & Discovery',
-    completedMilestones: 1,
-    totalMilestones: 4,
-    artifactCount: 2,
-    hasDeliverable: false,
-    lastActiveAt: Date.now() - 1000 * 60 * 8,
-  },
-  {
-    id: 'forum_interior',
-    title: 'Barn Gallery Wall',
-    brief: 'Design a gallery wall arrangement for the barn entryway.',
-    status: 'completed',
-    agents: [
-      { agentId: 'a3', name: 'Oané', robeColor: '#EC4899', image: null },
-    ],
-    currentPhase: undefined,
-    completedMilestones: 3,
-    totalMilestones: 3,
-    artifactCount: 5,
-    hasDeliverable: true,
-    lastActiveAt: Date.now() - 1000 * 60 * 60 * 2,
-  },
-  {
-    id: 'forum_pricing',
-    title: 'STR Dynamic Pricing',
-    brief: 'Set up a dynamic pricing strategy for the Santa Barbara property.',
-    status: 'paused',
-    agents: [
-      { agentId: 'a4', name: 'Accountant', robeColor: '#F59E0B', image: null },
-      { agentId: 'a5', name: 'Researcher',  robeColor: '#0EA5E9', image: null },
-    ],
-    currentPhase: 'Market Analysis',
-    completedMilestones: 1,
-    totalMilestones: 3,
-    artifactCount: 1,
-    hasDeliverable: false,
-    lastActiveAt: Date.now() - 1000 * 60 * 60 * 24,
-  },
-];
+// Mock data block deleted (was shipping in the bundle). Only real forums from
+// the desktop's dispatch sync are shown now.
 
 // ─── Forum card ───────────────────────────────────────────────────────────────
 
@@ -176,6 +128,7 @@ function ForumCard({ forum }: { forum: Forum }) {
 export default function ForumsScreen() {
   const { status, sendMessage, subscribe } = useDispatch();
   const [forums, setForums] = useState<Forum[]>([]);
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     if (status !== 'connected') return;
@@ -188,7 +141,7 @@ export default function ForumsScreen() {
   }, [status, sendMessage, subscribe]);
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top + 16 }]}>
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.pageTitle}>Forums</Text>
@@ -224,7 +177,8 @@ export default function ForumsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container:      { flex: 1, paddingTop: 60, backgroundColor: '#faf9f6' },
+  // paddingTop is applied inline from useSafeAreaInsets so it adapts per device.
+  container:      { flex: 1, backgroundColor: '#faf9f6' },
   header:         { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, marginBottom: 16 },
   pageTitle:      { fontSize: 28, fontWeight: 'bold', color: '#2D3748', flex: 1 },
   newBtn:         { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(60,102,99,0.1)', alignItems: 'center', justifyContent: 'center' },

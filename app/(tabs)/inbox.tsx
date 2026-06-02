@@ -3,6 +3,7 @@ import { useDispatch } from '../../context/DispatchContext';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Mic, Zap, FileText, Check, ArrowRight, CheckCircle, Pause, AlertTriangle } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type InboxItemType =
   | 'voice_note'
@@ -92,6 +93,7 @@ function InboxCard({ item, onApprove, onDismiss }: { item: InboxItem; onApprove:
 export default function InboxScreen() {
   const { status, sendMessage, subscribe } = useDispatch();
   const [items, setItems] = useState<InboxItem[]>([]);
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     if (status !== 'connected') return;
@@ -123,7 +125,7 @@ export default function InboxScreen() {
   const flat = sections.flatMap(s => [{ _header: s.title } as any, ...s.data]);
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top + 16 }]}>
       <Text style={styles.pageTitle}>Inbox</Text>
       {items.length === 0 ? (
         <View style={styles.empty}>
@@ -153,7 +155,8 @@ export default function InboxScreen() {
 }
 
 const styles = StyleSheet.create({
-  container:      { flex: 1, paddingTop: 60, backgroundColor: '#faf9f6' },
+  // paddingTop is applied inline from useSafeAreaInsets so it adapts per device.
+  container:      { flex: 1, backgroundColor: '#faf9f6' },
   pageTitle:      { fontSize: 28, fontWeight: 'bold', color: '#2D3748', paddingHorizontal: 20, marginBottom: 16 },
   sectionHeader:  { fontSize: 12, fontWeight: '700', color: '#718096', paddingTop: 12, paddingBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 },
   card:           { backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 10, borderWidth: 1, borderColor: '#E2E8F0', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 6, elevation: 2 },

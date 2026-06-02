@@ -2,6 +2,7 @@ import { StyleSheet, TouchableOpacity, FlatList, View, Text, Switch, ScrollView,
 import { useDispatch } from '../../context/DispatchContext';
 import { useEffect, useState } from 'react';
 import { Bot, MapPin, Zap, Camera, Bell, Home, Activity, ChevronRight, ChevronDown } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface Agent {
   id: string;
@@ -83,9 +84,10 @@ export default function SensorsScreen() {
   }
 
   const selectedAgent = agents.find(a => a.id === selectedAgentId);
+  const insets = useSafeAreaInsets();
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top + 16 }]}>
       <Text style={styles.title}>Sensors & Integrations</Text>
       <View style={styles.separator} />
 
@@ -180,7 +182,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     alignItems: 'center',
-    paddingTop: 60,
+    // paddingTop is applied inline from useSafeAreaInsets so it adapts per device.
     backgroundColor: '#faf9f6',
   },
   title: {
