@@ -212,7 +212,7 @@ export default function ChatScreen() {
   useEffect(() => {
     if (status !== 'connected') return;
 
-    sendMessage('get_chat_history', { agent_id: id, session_id: session_id ?? null });
+    sendMessage('get_chat_history', { agent_id: id, session_id: session_id ?? null, mode: mode ?? null });
 
     const unsubHistory = subscribe('chat_history', (history: any[]) => {
       const mapped: Message[] = (history ?? []).map(m => ({

@@ -54,20 +54,22 @@ export default function SensorsScreen() {
     
     // Generate a secure bridge token if turning on and one doesn't exist
     if (value) {
-      setSensorTokens(prev => {
-        const agentTokens = prev[agentId] || {};
-        if (agentTokens[sensorId]) return prev; // Already generated
-        
+      const agentTokens = sensorTokens[agentId] || {};
+      if (!agentTokens[sensorId]) {
         // Generate random 16 char token
         const randomString = Array.from({length: 16}, () => Math.floor(Math.random()*36).toString(36)).join('');
-        return {
+        const token = `${prefix}${randomString}`;
+        
+        sendMessage('set_sensor_token', { agent_id: agentId, sensor_id: sensorId, token });
+        
+        setSensorTokens(prev => ({
           ...prev,
           [agentId]: {
-            ...agentTokens,
-            [sensorId]: `${prefix}${randomString}`
+            ...(prev[agentId] || {}),
+            [sensorId]: token
           }
-        };
-      });
+        }));
+      }
     }
   };
 
@@ -157,7 +159,7 @@ export default function SensorsScreen() {
                   
                   {isEnabled && sensorTokens[selectedAgent.id]?.[sensor.id] && (
                     <View style={styles.tokenContainer}>
-                      <Text style={styles.tokenLabel}>Bridge Token (Paste into Desktop App):</Text>
+                      <Text style={[styles.tokenLabel, { color: '#3c6663' }]}>Synced automatically to your Mac ✓</Text>
                       <View style={styles.tokenBox}>
                         <Text style={styles.tokenText} selectable={true}>
                           {sensorTokens[selectedAgent.id][sensor.id]}

@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Mic, Zap, FileText, Check, ArrowRight, CheckCircle, Pause, AlertTriangle } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { getPrimaryInboxAction } from './inboxActions';
 
 type InboxItemType =
   | 'voice_note'
@@ -45,13 +46,18 @@ function timeAgo(ts: number) {
 
 function InboxCard({ item, onApprove, onDismiss }: { item: InboxItem; onApprove: (id: string) => void; onDismiss: (id: string) => void }) {
   const cfg = TYPE_CONFIG[item.type];
-
-  const primaryLabel = item.type === 'forum_deliverable' ? 'View' : item.type === 'forum_blocked' ? 'Answer' : item.type === 'forum_milestone' ? 'Open Forum' : item.type === 'forum_paused' ? 'Resume' : item.type === 'agent_request' ? 'Approve' : 'Open';
+  const primaryAction = getPrimaryInboxAction(item);
 
   const handlePrimary = () => {
-    if (item.forum_id) {
-      router.push(`/chat/${item.forum_id}?name=${encodeURIComponent(item.forum_title ?? 'Forum')}&mode=forum`);
+    if (primaryAction.kind === 'approve') {
+      onApprove(item.id);
+      return;
     }
+
+    if (primaryAction.kind === 'open_forum' && primaryAction.href) {
+      router.push(primaryAction.href as never);
+    }
+
     onDismiss(item.id);
   };
 
@@ -82,7 +88,7 @@ function InboxCard({ item, onApprove, onDismiss }: { item: InboxItem; onApprove:
           <Text style={styles.dismissText}>Dismiss</Text>
         </TouchableOpacity>
         <TouchableOpacity style={[styles.primaryBtn, { backgroundColor: cfg.color }]} onPress={handlePrimary}>
-          <Text style={styles.primaryText}>{primaryLabel}</Text>
+          <Text style={styles.primaryText}>{primaryAction.label}</Text>
           <ArrowRight size={13} color="#fff" style={{ marginLeft: 4 }} />
         </TouchableOpacity>
       </View>
