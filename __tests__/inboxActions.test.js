@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getPrimaryInboxAction } from './inboxActions.js';
+import { getPrimaryInboxAction } from '../app/(tabs)/inboxActions.js';
 
 test('agent requests resolve as approvals, not dismissals', () => {
   const action = getPrimaryInboxAction({
