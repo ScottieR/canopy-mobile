@@ -1,8 +1,60 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { WebView, WebViewMessageEvent } from 'react-native-webview';
+import {
+  buildSandboxedMiniAppHtml,
+  isAllowedMiniAppNavigation,
+  parseMiniAppMessage,
+} from './miniAppSandbox';
+
+function HtmlMiniApp({ props, onAction }: { props: any, onAction: (action: string, data: any) => void }) {
+  const html = buildSandboxedMiniAppHtml(String(props?.html ?? ''));
+  const requestedHeight = Number(props?.height ?? 420);
+  const height = Number.isFinite(requestedHeight)
+    ? Math.max(260, Math.min(720, requestedHeight))
+    : 420;
+
+  const handleMessage = (event: WebViewMessageEvent) => {
+    const parsed = parseMiniAppMessage(event.nativeEvent.data);
+    if (parsed) onAction(parsed.action, parsed.data);
+  };
+
+  return (
+    <View style={[styles.webviewCard, { height }]}>
+      <WebView
+        source={{ html, baseUrl: 'about:blank' }}
+        originWhitelist={['about:blank']}
+        onMessage={handleMessage}
+        onShouldStartLoadWithRequest={(request) => isAllowedMiniAppNavigation(request.url)}
+        javaScriptEnabled
+        javaScriptCanOpenWindowsAutomatically={false}
+        setSupportMultipleWindows={false}
+        domStorageEnabled={false}
+        cacheEnabled={false}
+        incognito
+        sharedCookiesEnabled={false}
+        thirdPartyCookiesEnabled={false}
+        allowFileAccess={false}
+        allowFileAccessFromFileURLs={false}
+        allowUniversalAccessFromFileURLs={false}
+        mixedContentMode="never"
+        allowsBackForwardNavigationGestures={false}
+        allowsLinkPreview={false}
+        dataDetectorTypes="none"
+        pullToRefreshEnabled={false}
+        bounces={false}
+        style={styles.webview}
+      />
+    </View>
+  );
+}
 
 export function GenUIRenderer({ payload, onAction }: { payload: any, onAction: (action: string, data: any) => void }) {
   const { component, props } = payload;
+
+  if (component === 'Html' || component === 'HtmlMiniApp') {
+    return <HtmlMiniApp props={props} onAction={onAction} />;
+  }
   
   if (component === 'ApprovalCard') {
     return (
@@ -113,6 +165,15 @@ export function GenUIRenderer({ payload, onAction }: { payload: any, onAction: (
 }
 
 const styles = StyleSheet.create({
+  webviewCard: {
+    width: '100%',
+    overflow: 'hidden',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#fff',
+  },
+  webview: { flex: 1, backgroundColor: '#fff' },
   card: { 
     backgroundColor: '#fff', 
     borderRadius: 20, 

@@ -8,11 +8,30 @@ export interface PairingData {
   token: string;
   ip: string;
   port: number;
+  deviceId?: string;
+  profile?: CompanionProfile;
+  experience?: 'full' | 'focused' | 'learning';
+  allowedAgentIds?: string[];
+}
+
+export interface CompanionProfile {
+  id: string;
+  displayName: string;
+  profileType: 'child' | 'adult' | 'guest';
+  contextJson?: Record<string, unknown>;
+}
+
+export interface CompanionAssignment {
+  deviceId?: string;
+  profile?: CompanionProfile | null;
+  experience: 'full' | 'focused' | 'learning';
+  allowedAgentIds?: string[];
 }
 
 interface DispatchContextProps {
   status: ConnectionStatus;
   pairingData: PairingData | null;
+  assignment: CompanionAssignment | null;
   connect: (data: PairingData) => Promise<void>;
   disconnect: () => Promise<void>;
   reconnect: () => void;
@@ -33,6 +52,7 @@ const RECONNECT_MAX_TRIES = 10;     // give up after 10 attempts
 export const DispatchProvider = ({ children }: { children: ReactNode }) => {
   const [status, setStatus]       = useState<ConnectionStatus>('disconnected');
   const [pairingData, setPairingData] = useState<PairingData | null>(null);
+  const [assignment, setAssignment] = useState<CompanionAssignment | null>(null);
   const [error, setError]         = useState<string | null>(null);
 
   const wsRef             = useRef<WebSocket | null>(null);
@@ -93,7 +113,7 @@ export const DispatchProvider = ({ children }: { children: ReactNode }) => {
     wsRef.current = socket;
 
     socket.onopen = () => {
-      socket.send(JSON.stringify({ auth: data.token }));
+      socket.send(JSON.stringify({ auth: data.token, deviceId: data.deviceId }));
     };
 
     socket.onmessage = (event) => {
@@ -101,16 +121,31 @@ export const DispatchProvider = ({ children }: { children: ReactNode }) => {
         const msg = JSON.parse(event.data);
 
         if (msg.status === 'authenticated') {
+          const nextAssignment: CompanionAssignment = msg.assignment ?? {
+            experience: data.experience ?? 'full',
+            profile: data.profile,
+            allowedAgentIds: data.allowedAgentIds,
+            deviceId: data.deviceId,
+          };
+          setAssignment(nextAssignment);
           setStatus('connected');
           reconnectAttempt.current = 0;
           startPing(socket);
           return;
         }
 
-        if (msg.error === 'unauthorized') {
+        if (msg.error === 'unauthorized' || msg.error === 'assignment_revoked') {
           setStatus('error');
-          setError('Authentication failed. Scan the QR code again to re-pair.');
+          setError(msg.error === 'assignment_revoked'
+            ? 'This companion assignment was revoked by the parent.'
+            : 'Authentication failed. Scan the QR code again to re-pair.');
           intentionalClose.current = true; // don't retry with bad credentials
+          if (msg.error === 'assignment_revoked') {
+            SecureStore.deleteItemAsync('canopy_pairing_data');
+            pairingRef.current = null;
+            setPairingData(null);
+            setAssignment(null);
+          }
           socket.close();
           return;
         }
@@ -119,6 +154,10 @@ export const DispatchProvider = ({ children }: { children: ReactNode }) => {
         if (msg.type === 'pong' || msg.command === 'pong') {
           if (pongTimer.current) { clearTimeout(pongTimer.current); pongTimer.current = null; }
           return;
+        }
+
+        if (msg.type === 'assignment_updated' && msg.payload) {
+          setAssignment(current => current ? { ...current, ...msg.payload } : current);
         }
 
         // Fan out to subscribers
@@ -226,6 +265,7 @@ export const DispatchProvider = ({ children }: { children: ReactNode }) => {
     await SecureStore.deleteItemAsync('canopy_pairing_data');
     pairingRef.current = null;
     setPairingData(null);
+    setAssignment(null);
     wsRef.current?.close();
     wsRef.current = null;
     setStatus('disconnected');
@@ -252,7 +292,7 @@ export const DispatchProvider = ({ children }: { children: ReactNode }) => {
 
   return (
     <DispatchContext.Provider value={{
-      status, pairingData,
+      status, pairingData, assignment,
       connect, disconnect, reconnect,
       sendMessage, subscribe,
       error,

@@ -6,6 +6,7 @@ import { Pressable } from 'react-native';
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
 import { useClientOnlyValue } from '@/components/useClientOnlyValue';
+import { useDispatch } from '../../context/DispatchContext';
 
 // You can explore the built-in icon families and icons on the web at https://icons.expo.fyi/
 function TabBarIcon(props: {
@@ -17,6 +18,8 @@ function TabBarIcon(props: {
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
+  const { assignment } = useDispatch();
+  const isFocusedCompanion = assignment?.experience === 'focused' || assignment?.experience === 'learning';
 
   return (
     <Tabs
@@ -42,6 +45,7 @@ export default function TabLayout() {
         name="two"
         options={{
           title: 'Scanner',
+          href: isFocusedCompanion ? null : undefined,
           tabBarIcon: ({ color }) => <TabBarIcon name="qrcode" color={color} />,
         }}
       />
@@ -49,6 +53,7 @@ export default function TabLayout() {
         name="forums"
         options={{
           title: 'Forums',
+          href: isFocusedCompanion ? null : undefined,
           tabBarIcon: ({ color }) => <TabBarIcon name="group" color={color} />,
         }}
       />
@@ -56,6 +61,7 @@ export default function TabLayout() {
         name="inbox"
         options={{
           title: 'Inbox',
+          href: isFocusedCompanion ? null : undefined,
           tabBarIcon: ({ color }) => <TabBarIcon name="inbox" color={color} />,
         }}
       />
@@ -63,6 +69,7 @@ export default function TabLayout() {
         name="sensors"
         options={{
           title: 'Sensors',
+          href: isFocusedCompanion ? null : undefined,
           tabBarIcon: ({ color }) => <TabBarIcon name="feed" color={color} />,
         }}
       />

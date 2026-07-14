@@ -110,7 +110,15 @@ const artifactStyles = StyleSheet.create({
 
 // ─── Single message bubble ────────────────────────────────────────────────────
 
-function MessageBubble({ item, agentColor }: { item: Message; agentColor: string }) {
+function MessageBubble({
+  item,
+  agentColor,
+  onGenUIAction,
+}: {
+  item: Message;
+  agentColor: string;
+  onGenUIAction: (payload: any, action: string, data: any) => void;
+}) {
   const isUser = item.role === 'user';
 
   if (isUser) {
@@ -133,15 +141,29 @@ function MessageBubble({ item, agentColor }: { item: Message; agentColor: string
       if (payload.component) {
         return (
           <View style={[msgStyles.wrapper, msgStyles.wrapperAgent]}>
-            <GenUIRenderer payload={payload} onAction={() => {}} />
+            <GenUIRenderer payload={payload} onAction={(action, data) => onGenUIAction(payload, action, data)} />
           </View>
         );
       }
     } catch {}
   }
 
-  // HTML or markdown artifact from a forum
-  if (format === 'html' || format === 'markdown') {
+  // HTML mini-apps run inside the same locked-down WebView used by
+  // parent-published companion resources. Actions return to the agent thread.
+  if (format === 'html') {
+    const payload = { component: 'HtmlMiniApp', props: { html: body, height: 480 } };
+    return (
+      <View style={[msgStyles.wrapper, msgStyles.wrapperAgent]}>
+        <GenUIRenderer
+          payload={payload}
+          onAction={(action, data) => onGenUIAction(payload, action, data)}
+        />
+      </View>
+    );
+  }
+
+  // Markdown artifacts remain readable document cards.
+  if (format === 'markdown') {
     return (
       <View style={[msgStyles.wrapper, msgStyles.wrapperAgent]}>
         <ArtifactCard format={format} body={body} agentColor={agentColor} />
@@ -156,7 +178,7 @@ function MessageBubble({ item, agentColor }: { item: Message; agentColor: string
       if (payload.component) {
         return (
           <View style={[msgStyles.wrapper, msgStyles.wrapperAgent]}>
-            <GenUIRenderer payload={payload} onAction={() => {}} />
+            <GenUIRenderer payload={payload} onAction={(action, data) => onGenUIAction(payload, action, data)} />
           </View>
         );
       }
@@ -239,7 +261,18 @@ export default function ChatScreen() {
       scrollToBottom(true);
     });
 
-    return () => { unsubHistory(); unsubResponse(); };
+    const unsubError = subscribe('chat_error', (payload: any) => {
+      if (payload.agent_id !== id) return;
+      setIsSending(false);
+      setMessages(prev => [...prev, {
+        id: Math.random().toString(),
+        role: 'agent',
+        content: `I couldn't complete that request: ${payload.error}`,
+        timestamp: Date.now(),
+      }]);
+    });
+
+    return () => { unsubHistory(); unsubResponse(); unsubError(); };
   }, [id, status, sendMessage, subscribe, scrollToBottom]);
 
   const sendMessageInternal = (text: string) => {
@@ -306,7 +339,17 @@ export default function ChatScreen() {
         ref={flatListRef}
         data={messages}
         keyExtractor={item => item.id}
-        renderItem={({ item }) => <MessageBubble item={item} agentColor={agentColor} />}
+        renderItem={({ item }) => (
+          <MessageBubble
+            item={item}
+            agentColor={agentColor}
+            onGenUIAction={(payload, action, data) => {
+              sendMessageInternal(
+                `[Mini-app action] component=${payload.component}; action=${action}; data=${JSON.stringify(data)}`,
+              );
+            }}
+          />
+        )}
         contentContainerStyle={styles.listContent}
         // Scroll to bottom when content grows (new messages arriving)
         onContentSizeChange={() => scrollToBottom(false)}

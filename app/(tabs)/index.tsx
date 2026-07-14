@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Wifi, WifiOff, RefreshCw } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { GenUIRenderer } from '../../components/GenUIRenderer';
 
 interface Agent {
   id: string;
@@ -20,12 +21,22 @@ interface Agent {
   conversation_id?: string | null;
 }
 
+interface CompanionResource {
+  id: string;
+  profileId: string;
+  agentId: string;
+  resourceType: string;
+  title: string;
+  version: number;
+  contentJson: any;
+}
+
 /** Mobile uses a stable per-agent session id, completely decoupled from the
  *  desktop's active thread. The backend creates this conversation lazily on
  *  first send_message / get_chat_history call. On the desktop's ThreadsRail
  *  the same conversation will appear as a regular thread the user can rename. */
-function mobileSessionId(agentId: string): string {
-  return `mobile_${agentId}`;
+function mobileSessionId(agentId: string, deviceId?: string): string {
+  return deviceId ? `companion_${deviceId}_${agentId}` : `mobile_${agentId}`;
 }
 
 /** Build the deep link that launches the app directly into a live voice
@@ -63,8 +74,9 @@ async function shareLiveShortcut(agent: Agent) {
 }
 
 export default function HomeScreen() {
-  const { status, error, disconnect, reconnect, sendMessage, subscribe } = useDispatch();
+  const { status, error, assignment, disconnect, reconnect, sendMessage, subscribe } = useDispatch();
   const [agents, setAgents] = useState<Agent[]>([]);
+  const [resources, setResources] = useState<CompanionResource[]>([]);
   // Honour the device's safe area instead of a hardcoded paddingTop: 60.
   // On notchless devices (small iPhones, most Android phones) this collapses
   // close to zero so we add a base padding for breathing room.
@@ -73,10 +85,18 @@ export default function HomeScreen() {
   useEffect(() => {
     if (status === 'connected') {
       sendMessage('list_agents');
+      if (assignment?.experience === 'focused' || assignment?.experience === 'learning') {
+        sendMessage('list_companion_resources');
+      }
       const unsub = subscribe('agents_list', (payload: Agent[]) => setAgents(payload));
-      return unsub;
+      const unsubResources = subscribe('companion_resources', (payload: CompanionResource[]) => setResources(payload ?? []));
+      const unsubUpdates = subscribe('assignment_updated', () => {
+        sendMessage('list_agents');
+        sendMessage('list_companion_resources');
+      });
+      return () => { unsub(); unsubResources(); unsubUpdates(); };
     }
-  }, [status, sendMessage, subscribe]);
+  }, [status, assignment?.experience, sendMessage, subscribe]);
 
   // Status pill config
   const statusConfig = {
@@ -89,7 +109,7 @@ export default function HomeScreen() {
   const renderAgent = ({ item }: { item: Agent }) => (
     <TouchableOpacity
       style={[styles.agentCard, { borderLeftColor: item.color || '#3c6663' }]}
-      onPress={() => router.push(`/chat/${item.id}?name=${encodeURIComponent(item.name)}&color=${encodeURIComponent(item.color)}&session_id=${encodeURIComponent(mobileSessionId(item.id))}`)}
+      onPress={() => router.push(`/chat/${item.id}?name=${encodeURIComponent(item.name)}&color=${encodeURIComponent(item.color)}&session_id=${encodeURIComponent(mobileSessionId(item.id, assignment?.deviceId))}`)}
       onLongPress={() => shareLiveShortcut(item)}
       delayLongPress={450}
       activeOpacity={0.85}
@@ -151,7 +171,34 @@ export default function HomeScreen() {
             keyExtractor={a => a.id}
             renderItem={renderAgent}
             contentContainerStyle={{ paddingBottom: 20 }}
-            ListHeaderComponent={<Text style={styles.sectionTitle}>Your Swarm</Text>}
+            ListHeaderComponent={(
+              <View>
+                {assignment?.profile?.displayName && (
+                  <Text style={styles.welcomeText}>Hi {assignment.profile.displayName}</Text>
+                )}
+                {resources.map((resource) => (
+                  <View key={`${resource.id}:${resource.version}`} style={styles.resourceCard}>
+                    <Text style={styles.resourceTitle}>{resource.title}</Text>
+                    {resource.resourceType === 'mini_app' ? (
+                      <GenUIRenderer
+                        payload={resource.contentJson}
+                        onAction={(action, data) => sendMessage('companion_resource_action', {
+                          resource_id: resource.id,
+                          agent_id: resource.agentId,
+                          action,
+                          data,
+                        })}
+                      />
+                    ) : (
+                      <Text style={styles.resourceBody}>{String(resource.contentJson?.summary ?? resource.contentJson?.text ?? '')}</Text>
+                    )}
+                  </View>
+                ))}
+                <Text style={styles.sectionTitle}>
+                  {assignment?.experience === 'learning' ? 'Your learning companion' : assignment?.experience === 'focused' ? 'Shared with you' : 'Your Swarm'}
+                </Text>
+              </View>
+            )}
             ListEmptyComponent={
               <Text style={styles.emptyText}>No agents yet — create one in the desktop app</Text>
             }
@@ -187,6 +234,10 @@ const styles = StyleSheet.create({
   buttonText:        { color: '#fff', fontWeight: '700', fontSize: 16 },
 
   sectionTitle:      { fontSize: 13, fontWeight: '700', color: '#718096', marginTop: 16, marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.6, paddingHorizontal: 4 },
+  welcomeText:       { fontSize: 24, fontWeight: '700', color: '#2D3748', marginTop: 16, marginBottom: 8 },
+  resourceCard:      { backgroundColor: '#F7FAFC', borderRadius: 16, borderWidth: 1, borderColor: '#E2E8F0', padding: 12, marginTop: 12 },
+  resourceTitle:     { fontSize: 13, fontWeight: '700', color: '#4A5568', marginBottom: 8 },
+  resourceBody:      { fontSize: 14, color: '#4A5568', lineHeight: 20 },
   emptyText:         { color: '#A0AEC0', textAlign: 'center', paddingTop: 40, fontSize: 14 },
 
   agentCard:         { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 14, padding: 14, marginBottom: 10, borderLeftWidth: 4, borderWidth: 1, borderColor: '#E2E8F0', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 6, elevation: 2 },
