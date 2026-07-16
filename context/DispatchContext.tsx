@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import { AppState, AppStateStatus } from 'react-native';
+import { createDispatchAuth, DispatchCryptoSession } from '../security/dispatchCrypto';
 
 type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
 
@@ -63,6 +64,7 @@ export const DispatchProvider = ({ children }: { children: ReactNode }) => {
   const pingTimer         = useRef<ReturnType<typeof setInterval> | null>(null);
   const pongTimer         = useRef<ReturnType<typeof setTimeout> | null>(null);
   const listeners         = useRef<{ [key: string]: ((payload: any) => void)[] }>({});
+  const cryptoSession     = useRef<DispatchCryptoSession | null>(null);
 
   const subscribe = useCallback((msgType: string, callback: (payload: any) => void) => {
     if (!listeners.current[msgType]) listeners.current[msgType] = [];
@@ -89,7 +91,12 @@ export const DispatchProvider = ({ children }: { children: ReactNode }) => {
     clearPing();
     pingTimer.current = setInterval(() => {
       if (socket.readyState !== WebSocket.OPEN) return;
-      socket.send(JSON.stringify({ command: 'ping' }));
+      const session = cryptoSession.current;
+      if (!session) {
+        socket.close();
+        return;
+      }
+      socket.send(session.encrypt(JSON.stringify({ command: 'ping' })));
       pongTimer.current = setTimeout(() => {
         console.warn('[Dispatch] Pong timeout — closing stale connection');
         socket.close();
@@ -106,19 +113,44 @@ export const DispatchProvider = ({ children }: { children: ReactNode }) => {
       wsRef.current = null;
     }
     clearPing();
+    cryptoSession.current = null;
     setStatus('connecting');
     setError(null);
 
     const socket = new WebSocket(`ws://${data.ip}:${data.port}`);
     wsRef.current = socket;
 
-    socket.onopen = () => {
-      socket.send(JSON.stringify({ auth: data.token, deviceId: data.deviceId }));
-    };
+    // The server speaks first with a random challenge. The pairing token is never
+    // sent over this plaintext LAN socket; it proves and derives an encrypted session.
+    socket.onopen = () => {};
 
     socket.onmessage = (event) => {
       try {
-        const msg = JSON.parse(event.data);
+        if (typeof event.data !== 'string' || event.data.length > 2_000_000) {
+          throw new Error('Invalid dispatch frame');
+        }
+        const outer = JSON.parse(event.data);
+        if (outer?.type === 'auth_challenge') {
+          if (outer.version !== 1 || typeof outer.challenge !== 'string') {
+            throw new Error('Unsupported dispatch handshake');
+          }
+          const auth = createDispatchAuth(data.token, outer.challenge, data.deviceId);
+          cryptoSession.current = new DispatchCryptoSession(data.token, outer.challenge);
+          socket.send(JSON.stringify(auth));
+          return;
+        }
+
+        // The only permitted plaintext post-handshake response is a generic auth error.
+        if (outer?.error === 'unauthorized') {
+          setStatus('error');
+          setError('Authentication failed. Scan the QR code again to re-pair.');
+          intentionalClose.current = true;
+          socket.close();
+          return;
+        }
+        const session = cryptoSession.current;
+        if (!session) throw new Error('Encrypted dispatch session is not established');
+        const msg = JSON.parse(session.decrypt(event.data));
 
         if (msg.status === 'authenticated') {
           const nextAssignment: CompanionAssignment = msg.assignment ?? {
@@ -165,7 +197,9 @@ export const DispatchProvider = ({ children }: { children: ReactNode }) => {
           (listeners.current[msg.type] ?? []).forEach(cb => cb(msg.payload));
         }
       } catch (e) {
-        console.error('[Dispatch] Message parse error', e);
+        console.error('[Dispatch] Rejected invalid or unauthenticated message');
+        intentionalClose.current = true;
+        socket.close();
       }
     };
 
@@ -176,6 +210,7 @@ export const DispatchProvider = ({ children }: { children: ReactNode }) => {
 
     socket.onclose = () => {
       clearPing();
+      cryptoSession.current = null;
       wsRef.current = null;
       setStatus(prev => prev !== 'error' ? 'disconnected' : prev);
 
@@ -224,6 +259,7 @@ export const DispatchProvider = ({ children }: { children: ReactNode }) => {
       clearReconnect();
       intentionalClose.current = true;
       wsRef.current?.close();
+      cryptoSession.current = null;
     };
   }, [establishConnection]);
 
@@ -268,6 +304,7 @@ export const DispatchProvider = ({ children }: { children: ReactNode }) => {
     setAssignment(null);
     wsRef.current?.close();
     wsRef.current = null;
+    cryptoSession.current = null;
     setStatus('disconnected');
     setError(null);
     reconnectAttempt.current = 0;
@@ -284,7 +321,12 @@ export const DispatchProvider = ({ children }: { children: ReactNode }) => {
 
   const sendMessage = useCallback((command: string, payload: any = {}) => {
     if (wsRef.current?.readyState === WebSocket.OPEN && status === 'connected') {
-      wsRef.current.send(JSON.stringify({ command, payload }));
+      const session = cryptoSession.current;
+      if (!session) {
+        console.warn('[Dispatch] Cannot send — secure session is not established');
+        return;
+      }
+      wsRef.current.send(session.encrypt(JSON.stringify({ command, payload })));
     } else {
       console.warn('[Dispatch] Cannot send — not connected');
     }

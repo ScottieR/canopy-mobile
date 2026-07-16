@@ -3,6 +3,7 @@ import { useDispatch } from '../../context/DispatchContext';
 import { useEffect, useState } from 'react';
 import { Bot, MapPin, Zap, Camera, Bell, Home, Activity, ChevronRight, ChevronDown } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Crypto from 'expo-crypto';
 
 interface Agent {
   id: string;
@@ -43,7 +44,7 @@ export default function SensorsScreen() {
     }
   }, [status, sendMessage, subscribe]);
 
-  const toggleSensor = (agentId: string, sensorId: string, value: boolean, prefix: string) => {
+  const toggleSensor = async (agentId: string, sensorId: string, value: boolean, prefix: string) => {
     setSensorState(prev => ({
       ...prev,
       [agentId]: {
@@ -56,8 +57,8 @@ export default function SensorsScreen() {
     if (value) {
       const agentTokens = sensorTokens[agentId] || {};
       if (!agentTokens[sensorId]) {
-        // Generate random 16 char token
-        const randomString = Array.from({length: 16}, () => Math.floor(Math.random()*36).toString(36)).join('');
+        const randomBytes = await Crypto.getRandomBytesAsync(32);
+        const randomString = Array.from(randomBytes, byte => byte.toString(16).padStart(2, '0')).join('');
         const token = `${prefix}${randomString}`;
         
         sendMessage('set_sensor_token', { agent_id: agentId, sensor_id: sensorId, token });
