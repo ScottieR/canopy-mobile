@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "canopy-mobile",
+    "name": "Canopy",
     "slug": "canopy-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -8,15 +8,26 @@
     "scheme": "canopymobile",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "splash": {
       "image": "./assets/images/splash-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.scottieryan.canopy",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Canopy uses the camera to scan the pairing QR code shown by Canopy Desktop.",
+        "NSMicrophoneUsageDescription": "Canopy uses the microphone for live voice sessions with your agents.",
+        "NSLocalNetworkUsageDescription": "Canopy connects to your Canopy Desktop app over your local network.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
+      "package": "com.scottieryan.canopy",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -35,6 +46,16 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "454383a6-bf9b-4325-b88f-6fa3e704f0f4"
+      }
+    },
+    "owner": "scottier",
+    "updates": {
+      "url": "https://u.expo.dev/454383a6-bf9b-4325-b88f-6fa3e704f0f4"
     }
   }
 }
