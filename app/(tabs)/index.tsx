@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { Wifi, WifiOff, RefreshCw } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GenUIRenderer } from '../../components/GenUIRenderer';
+import { mobileSessionId } from '../../utils/session';
 
 interface Agent {
   id: string;
@@ -29,14 +30,6 @@ interface CompanionResource {
   title: string;
   version: number;
   contentJson: any;
-}
-
-/** Mobile uses a stable per-agent session id, completely decoupled from the
- *  desktop's active thread. The backend creates this conversation lazily on
- *  first send_message / get_chat_history call. On the desktop's ThreadsRail
- *  the same conversation will appear as a regular thread the user can rename. */
-function mobileSessionId(agentId: string, deviceId?: string): string {
-  return deviceId ? `companion_${deviceId}_${agentId}` : `mobile_${agentId}`;
 }
 
 /** Build the deep link that launches the app directly into a live voice
@@ -77,6 +70,10 @@ export default function HomeScreen() {
   const { status, error, assignment, disconnect, reconnect, sendMessage, subscribe } = useDispatch();
   const [agents, setAgents] = useState<Agent[]>([]);
   const [resources, setResources] = useState<CompanionResource[]>([]);
+  // Companion (focused/learning) pairings only ever get their own scoped
+  // companion_{device}_{agent} session — there's no desktop thread to pick
+  // from, so they skip the thread picker and go straight to chat.
+  const isCompanion = assignment?.experience === 'focused' || assignment?.experience === 'learning';
   // Honour the device's safe area instead of a hardcoded paddingTop: 60.
   // On notchless devices (small iPhones, most Android phones) this collapses
   // close to zero so we add a base padding for breathing room.
@@ -109,7 +106,16 @@ export default function HomeScreen() {
   const renderAgent = ({ item }: { item: Agent }) => (
     <TouchableOpacity
       style={[styles.agentCard, { borderLeftColor: item.color || '#3c6663' }]}
-      onPress={() => router.push(`/chat/${item.id}?name=${encodeURIComponent(item.name)}&color=${encodeURIComponent(item.color)}&session_id=${encodeURIComponent(mobileSessionId(item.id, assignment?.deviceId))}`)}
+      onPress={() => {
+        if (isCompanion) {
+          router.push(`/chat/${item.id}?name=${encodeURIComponent(item.name)}&color=${encodeURIComponent(item.color)}&session_id=${encodeURIComponent(mobileSessionId(item.id, assignment?.deviceId))}`);
+        } else {
+          // Full-access devices see a thread picker first — desktop threads
+          // for this agent plus "New chat" — instead of always landing in a
+          // fresh mobile-only session.
+          router.push(`/threads/${item.id}?name=${encodeURIComponent(item.name)}&color=${encodeURIComponent(item.color)}`);
+        }
+      }}
       onLongPress={() => shareLiveShortcut(item)}
       delayLongPress={450}
       activeOpacity={0.85}
@@ -155,7 +161,7 @@ export default function HomeScreen() {
 
       {status !== 'connected' ? (
         <View style={styles.disconnectedContent}>
-          <TouchableOpacity style={styles.primaryButton} onPress={() => router.push('/(tabs)/two')}>
+          <TouchableOpacity style={styles.primaryButton} onPress={() => router.push('/pair')}>
             <Text style={styles.buttonText}>Scan QR Code to Pair</Text>
           </TouchableOpacity>
           {status === 'error' && (

@@ -317,22 +317,28 @@ export default function ChatScreen() {
             <ArrowLeft color="#2D3748" size={24} />
           </TouchableOpacity>
         ),
-        // Mobile threads are scoped per-device — they don't follow whatever
-        // thread the desktop currently has open. The badge tells the user
-        // they're in their phone's dedicated thread with this agent.
-        headerRight: () => session_id?.startsWith('mobile_') ? (
-          <View style={{ marginRight: 12, backgroundColor: 'rgba(74,158,150,0.1)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 }}>
-            <Text style={{ fontSize: 10, color: '#4A9E96', fontWeight: '600' }}>
-              Mobile thread
-            </Text>
-          </View>
-        ) : session_id ? (
-          <View style={{ marginRight: 12, backgroundColor: 'rgba(74,158,150,0.1)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 }}>
-            <Text style={{ fontSize: 10, color: '#4A9E96', fontWeight: '600' }}>
-              Active thread
-            </Text>
-          </View>
-        ) : null,
+        // Badge tells the user which kind of session they're in:
+        // - "mobile_" prefix: a phone-only session with no desktop counterpart.
+        // - "companion_" prefix: a companion (focused/learning) pairing's
+        //   fixed scoped session — always the same one, never picked.
+        // - anything else: a real desktop conversation id, continued via the
+        //   thread picker (see app/threads/[agentId].tsx) — same thread the
+        //   desktop's ThreadsRail shows.
+        headerRight: () => {
+          if (!session_id) return null;
+          const label = session_id.startsWith('mobile_')
+            ? 'Mobile thread'
+            : session_id.startsWith('companion_')
+            ? 'Active thread'
+            : 'Desktop thread';
+          return (
+            <View style={{ marginRight: 12, backgroundColor: 'rgba(74,158,150,0.1)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 }}>
+              <Text style={{ fontSize: 10, color: '#4A9E96', fontWeight: '600' }}>
+                {label}
+              </Text>
+            </View>
+          );
+        },
       }} />
 
       <FlatList

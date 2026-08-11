@@ -41,13 +41,14 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => <TabBarIcon name="home" color={color} />,
         }}
       />
+      {/* QR pairing lives at /pair (a full-screen modal reached from Home's
+          connect/reconnect buttons) instead of a permanent bottom tab — it's
+          a one-time setup action, not a surface people revisit. This entry
+          stays registered with href: null purely so the leftover
+          app/(tabs)/two.tsx redirect stub doesn't get an auto-generated tab. */}
       <Tabs.Screen
         name="two"
-        options={{
-          title: 'Scanner',
-          href: isFocusedCompanion ? null : undefined,
-          tabBarIcon: ({ color }) => <TabBarIcon name="qrcode" color={color} />,
-        }}
+        options={{ href: null }}
       />
       <Tabs.Screen
         name="forums"
