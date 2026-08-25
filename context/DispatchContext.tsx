@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import * as SecureStore from 'expo-secure-store';
 import { AppState, AppStateStatus } from 'react-native';
 import { createDispatchAuth, DispatchCryptoSession } from '../security/dispatchCrypto';
+import { discoverDesktop } from '../utils/mdnsDiscovery';
 
 type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
 
